@@ -47,7 +47,7 @@ func NewRCONClient(host string, port uint16) *RCONClient {
 func (client *RCONClient) SendPacket(packet Packet) error {
 	payload := []byte(packet.Data)
 	payloadLength := len(payload)
-	data := make([]byte, 15+payloadLength)
+	data := make([]byte, 16+payloadLength)
 	MCEndian.PutUint32(data, uint32(10+payloadLength))
 	MCEndian.PutUint32(data[4:], uint32(packet.RequestID))
 	MCEndian.PutUint32(data[8:], uint32(packet.Type))
