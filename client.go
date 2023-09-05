@@ -1,4 +1,4 @@
-package gorcon
+package client
 
 import (
 	"encoding/binary"
