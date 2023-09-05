@@ -73,14 +73,7 @@ func (client *RCONClient) RecvPacket() (*Packet, error) {
 	packet := &Packet{}
 	packet.RequestID = int32(MCEndian.Uint32(rawPacket))
 	packet.Type = PacketType(MCEndian.Uint32(rawPacket[4:]))
-	data := rawPacket[8:]
-	packet.Data = ""
-	for _, r := range data {
-		if r == 0 {
-			break
-		}
-		packet.Data += string(r)
-	}
+	packet.Data = string(rawPacket[8:(packetLength - 2)])
 	return packet, nil
 }
 
