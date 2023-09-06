@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"strconv"
 )
 
 type PacketType int32
@@ -36,10 +35,10 @@ type Packet struct {
 	Data      string
 }
 
-func NewRCONClient(host string, port uint16) *RCONClient {
+func NewRCONClient(address string) *RCONClient {
 	counter++
 	return &RCONClient{
-		Address:   host + ":" + strconv.FormatUint(uint64(port), 10),
+		Address:   address,
 		RequestID: RequestIDStart + counter - 1,
 	}
 }
