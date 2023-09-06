@@ -125,10 +125,10 @@ func (client *RCONClient) SendCommand(command string) (string, error) {
 		if packet.Type != PacketResponse {
 			continue
 		}
+		res += packet.Data
 		if len(packet.Data) < PacketChunkLength {
 			break
 		}
-		res += packet.Data
 	}
 	return res, nil
 }
