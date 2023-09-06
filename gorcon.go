@@ -98,6 +98,9 @@ func (client *RCONClient) Login(password string) error {
 	switch packet.Type {
 	case PacketCommand:
 		if packet.RequestID != client.RequestID {
+			if err = client.Close(); err != nil {
+				return err
+			}
 			return InvalidPassword
 		}
 	}
@@ -118,6 +121,9 @@ func (client *RCONClient) SendCommand(command string) (string, error) {
 		packet, err := client.RecvPacket()
 		if err != nil {
 			return res, err
+		}
+		if packet.Type != PacketResponse {
+			continue
 		}
 		if len(packet.Data) < PacketChunkLength {
 			break
