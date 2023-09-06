@@ -108,12 +108,12 @@ func (client *RCONClient) Login(password string) error {
 }
 
 func (client *RCONClient) SendCommand(command string) (string, error) {
-	err := client.SendPacket(Packet{
+
+	if err := client.SendPacket(Packet{
 		RequestID: client.RequestID,
 		Type:      PacketCommand,
 		Data:      command,
-	})
-	if err != nil {
+	}); err != nil {
 		return "", err
 	}
 	res := ""
