@@ -170,12 +170,40 @@ func (ctx *RCONContext) SendBinaryPacket(packet BinaryPacket) error {
 	return err
 }
 
+func (ctx *RCONContext) RawSend(requestID int32, payload string) error {
+	return ctx.SendPacket(Packet{
+		RequestID: requestID,
+		Type:      PacketTypeResponse,
+		Body:      payload,
+	})
+}
+
+func (ctx *RCONContext) Send(requestID int32, payload string) error {
+	chunks := Collect(payload)
+	if len(chunks) == 0 {
+		chunks = []string{""}
+	}
+	if len(chunks[len(chunks)-1]) == 4096 {
+		chunks = append(chunks, "")
+	}
+	for _, chunk := range chunks {
+		if err := ctx.RawSend(requestID, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func NewCommandContext(context *RCONContext, packet *Packet) *RCONCommandContext {
 	return &RCONCommandContext{
 		Command:   packet.Body,
 		Context:   context,
 		RequestID: packet.RequestID,
 	}
+}
+
+func (cctx *RCONCommandContext) Reply(payload string) error {
+	return cctx.Context.Send(cctx.RequestID, payload)
 }
 
 func (rs *RCONServer) handleConnection(conn net.Conn) {
@@ -266,6 +294,7 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 					if len(chunks[len(chunks)-1]) == 4096 {
 						chunks = append(chunks, "")
 					}
+				sendingChunks:
 					for _, chunk := range chunks {
 						if err := ctx.SendPacket(Packet{
 							RequestID: cctx.RequestID,
@@ -273,6 +302,7 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 							Body:      chunk,
 						}); err != nil {
 							rs.ErrorHandler(cctx, ctx, err)
+							break sendingChunks
 						}
 					}
 				default:
