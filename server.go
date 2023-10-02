@@ -25,6 +25,7 @@ type RCONErrorHandler func(*RCONCommandContext, *RCONContext, error)
 type RCONDispatcher func(*RCONContext, *BinaryPacket) error
 
 type RCONServer struct {
+	Config         RCONServerConfig
 	Checker        RCONPasswordChecker
 	CommandHandler RCONCommandHandler
 	ErrorHandler   RCONErrorHandler
@@ -84,10 +85,17 @@ var (
 	}
 )
 
-func NewRCONServer() *RCONServer {
+func NewRCONServer(config *RCONServerConfig) *RCONServer {
+	if config == nil {
+		config = &RCONServerConfig{}
+	}
 	return &RCONServer{
+		Config:         *config,
 		Checker:        DefaultChecker,
 		CommandHandler: DefaultCommandHandler,
+		ErrorHandler:   DefaultErrorHandler,
+		Listener:       nil,
+		Dispatchers:    map[PacketType]RCONDispatcher{},
 	}
 }
 
@@ -244,7 +252,12 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 			if rs.CommandHandler != nil {
 				switch rs.CommandHandler.(type) {
 				case func(*RCONCommandContext):
-					rs.CommandHandler.(func(*RCONCommandContext))(cctx)
+					f := rs.CommandHandler.(func(*RCONCommandContext))
+					if (rs.Config.Flags & CommandInGoroutine) != 0 {
+						go f(cctx)
+					} else {
+						f(cctx)
+					}
 				case func(*RCONCommandContext) []string:
 					chunks := rs.CommandHandler.(func(*RCONCommandContext) []string)(cctx)
 					if len(chunks) == 0 {
