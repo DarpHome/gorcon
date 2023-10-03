@@ -22,10 +22,9 @@ type RCONClient struct {
 	Connection net.Conn
 }
 
-func NewRCONClient(address string) *RCONClient {
+func NewRCONClient() *RCONClient {
 	counter++
 	return &RCONClient{
-		Address:   address,
 		RequestID: RequestIDStart + counter - 1,
 	}
 }
@@ -40,11 +39,12 @@ func (client *RCONClient) RecvPacket() (*Packet, error) {
 }
 
 func (client *RCONClient) Connect(address string) error {
-	connection, err := net.Dial("tcp", client.Address)
+	connection, err := net.Dial("tcp", address)
 	if err != nil {
 		return err
 	}
 	client.Connection = connection
+	client.Address = address
 	return nil
 }
 
