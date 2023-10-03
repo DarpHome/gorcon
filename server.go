@@ -2,6 +2,7 @@ package gorcon
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"reflect"
 )
@@ -228,13 +229,7 @@ func (cctx *RCONCommandContext) Reply(payload string) error {
 
 func (rs *RCONServer) handleConnection(conn net.Conn) {
 	ctx := NewContext(conn, rs)
-	defer func() {
-		if err := ctx.Connection.Close(); err != nil {
-			if rs.ErrorHandler != nil {
-				rs.ErrorHandler(nil, ctx, err)
-			}
-		}
-	}()
+	defer ctx.Close()
 	packet, err := ctx.RecvPacket()
 	if err != nil {
 		if rs.ErrorHandler != nil {
@@ -275,6 +270,9 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 	for !ctx.Closed {
 		packet, err := ctx.RecvBinaryPacket()
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			if rs.ErrorHandler != nil {
 				rs.ErrorHandler(nil, ctx, err)
 			}
