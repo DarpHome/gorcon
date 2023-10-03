@@ -25,7 +25,7 @@ type RCONPasswordChecker func(*RCONContext, string) bool
 type RCONCommandHandler interface{}
 type RCONErrorHandler func(*RCONCommandContext, *RCONContext, error)
 type RCONLoggedHandler func(*RCONContext)
-type RCONExitHandler func(RCONContext)
+type RCONExitHandler func(*RCONContext)
 type RCONDispatcher func(*RCONContext, *BinaryPacket) error
 
 type RCONServer struct {
@@ -375,9 +375,10 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 			})
 		}
 	}
-	if err = conn.Close(); err != nil && rs.ErrorHandler != nil {
-		rs.ErrorHandler(nil, nil, err)
+	if rs.ExitHandler != nil {
+		rs.ExitHandler(ctx)
 	}
+	ctx.Close()
 }
 
 func (rs *RCONServer) Run(address string) error {
