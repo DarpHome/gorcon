@@ -11,17 +11,21 @@ type RCONContext struct {
 	Connection net.Conn
 	RequestID  int32
 	Server     *RCONServer
+	UserData   interface{}
 }
 
 type RCONCommandContext struct {
 	Command   string
 	Context   *RCONContext
 	RequestID int32
+	UserData  interface{}
 }
 
-type RCONPasswordChecker func(string) bool
+type RCONPasswordChecker func(*RCONContext, string) bool
 type RCONCommandHandler interface{}
 type RCONErrorHandler func(*RCONCommandContext, *RCONContext, error)
+type RCONLoggedHandler func(*RCONContext)
+type RCONExitHandler func(RCONContext)
 type RCONDispatcher func(*RCONContext, *BinaryPacket) error
 
 type RCONServer struct {
@@ -29,6 +33,8 @@ type RCONServer struct {
 	Checker        RCONPasswordChecker
 	CommandHandler RCONCommandHandler
 	ErrorHandler   RCONErrorHandler
+	LoggedHandler  RCONLoggedHandler
+	ExitHandler    RCONExitHandler
 	Listener       net.Listener
 	Dispatchers    map[PacketType]RCONDispatcher
 }
@@ -74,7 +80,7 @@ func (e *RCONErrorInvalidLength) Error() string {
 }
 
 var (
-	DefaultChecker RCONPasswordChecker = func(string) bool {
+	DefaultChecker RCONPasswordChecker = func(*RCONContext, string) bool {
 		return false
 	}
 	DefaultCommandHandler RCONCommandHandler = func(*RCONCommandContext) []string {
@@ -110,10 +116,14 @@ func (rs *RCONServer) OnCommand(commandHandler RCONCommandHandler) *RCONServer {
 		return rs
 	}
 	switch commandHandler.(type) {
-	case func(*RCONCommandContext):
-		rs.CommandHandler = commandHandler
 	case func(*RCONCommandContext) []string:
 		rs.CommandHandler = commandHandler
+	case func(*RCONCommandContext) string:
+		rs.CommandHandler = commandHandler
+	case func(*RCONCommandContext):
+		rs.CommandHandler = commandHandler
+	default:
+		panic(fmt.Errorf("unknown handler type: %v", reflect.TypeOf(commandHandler)))
 	}
 	return rs
 }
@@ -123,8 +133,18 @@ func (rs *RCONServer) OnError(errorHandler RCONErrorHandler) *RCONServer {
 	return rs
 }
 
+func (rs *RCONServer) OnLogged(loggedHandler RCONLoggedHandler) *RCONServer {
+	rs.LoggedHandler = loggedHandler
+	return rs
+}
+
+func (rs *RCONServer) OnExit(exitHandler RCONExitHandler) *RCONServer {
+	rs.ExitHandler = exitHandler
+	return rs
+}
+
 func ForPassword(password string) RCONPasswordChecker {
-	return func(providedPassword string) bool {
+	return func(_ *RCONContext, providedPassword string) bool {
 		return providedPassword == password
 	}
 }
@@ -226,7 +246,7 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 	if packet.Type != PacketTypeLogin {
 		return
 	}
-	if !ctx.Server.Checker(packet.Body) {
+	if !ctx.Server.Checker(ctx, packet.Body) {
 		err = ctx.SendPacket(Packet{
 			RequestID: -1,
 			Type:      PacketTypeCommand,
@@ -248,6 +268,9 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 			rs.ErrorHandler(nil, ctx, err)
 		}
 		return
+	}
+	if rs.LoggedHandler != nil {
+		rs.LoggedHandler(ctx)
 	}
 	for !ctx.Closed {
 		packet, err := ctx.RecvBinaryPacket()
@@ -287,23 +310,56 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 						f(cctx)
 					}
 				case func(*RCONCommandContext) []string:
-					chunks := rs.CommandHandler.(func(*RCONCommandContext) []string)(cctx)
-					if len(chunks) == 0 {
-						chunks = []string{""}
-					}
-					if len(chunks[len(chunks)-1]) == 4096 {
-						chunks = append(chunks, "")
-					}
-				sendingChunks:
-					for _, chunk := range chunks {
-						if err := ctx.SendPacket(Packet{
-							RequestID: cctx.RequestID,
-							Type:      PacketTypeResponse,
-							Body:      chunk,
-						}); err != nil {
-							rs.ErrorHandler(cctx, ctx, err)
-							break sendingChunks
+					f := func(cctx *RCONCommandContext) {
+						chunks := rs.CommandHandler.(func(*RCONCommandContext) []string)(cctx)
+						if len(chunks) == 0 {
+							chunks = []string{""}
 						}
+						if len(chunks[len(chunks)-1]) == 4096 {
+							chunks = append(chunks, "")
+						}
+					sendingChunks:
+						for _, chunk := range chunks {
+							if err := ctx.SendPacket(Packet{
+								RequestID: cctx.RequestID,
+								Type:      PacketTypeResponse,
+								Body:      chunk,
+							}); err != nil {
+								rs.ErrorHandler(cctx, ctx, err)
+								break sendingChunks
+							}
+						}
+					}
+					if (rs.Config.Flags & CommandInGoroutine) != 0 {
+						go f(cctx)
+					} else {
+						f(cctx)
+					}
+				case func(*RCONCommandContext) string:
+					f := func(cctx *RCONCommandContext) {
+						chunks := Collect(rs.CommandHandler.(func(*RCONCommandContext) string)(cctx))
+						if len(chunks) == 0 {
+							chunks = []string{""}
+						}
+						if len(chunks[len(chunks)-1]) == 4096 {
+							chunks = append(chunks, "")
+						}
+					sendingChunks:
+						for _, chunk := range chunks {
+							if err := ctx.SendPacket(Packet{
+								RequestID: cctx.RequestID,
+								Type:      PacketTypeResponse,
+								Body:      chunk,
+							}); err != nil {
+								rs.ErrorHandler(cctx, ctx, err)
+								break sendingChunks
+							}
+						}
+					}
+					if (rs.Config.Flags & CommandInGoroutine) != 0 {
+						go f(cctx)
+					} else {
+						f(cctx)
 					}
 				default:
 					if rs.ErrorHandler != nil {
