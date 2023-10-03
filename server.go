@@ -165,10 +165,10 @@ func NewContext(conn net.Conn, server *RCONServer) *RCONContext {
 }
 
 func (ctx *RCONContext) Close() *RCONContext {
-	ctx.Closed = true
 	if !ctx.Closed {
 		ctx.Connection.Close()
 	}
+	ctx.Closed = true
 	return ctx
 }
 
@@ -278,7 +278,8 @@ func (rs *RCONServer) handleConnection(conn net.Conn) {
 			if rs.ErrorHandler != nil {
 				rs.ErrorHandler(nil, ctx, err)
 			}
-			break
+			ctx.Close()
+			continue
 		}
 		dp, ok := rs.Dispatchers[packet.Type]
 		if ok {
