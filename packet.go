@@ -80,7 +80,7 @@ func ReadBinaryPacket(r io.Reader) (*BinaryPacket, error) {
 	return &BinaryPacket{
 		RequestID: int32(MCEndian.Uint32(data)),
 		Type:      PacketType(MCEndian.Uint32(data[4:])),
-		Body:      data[:len(data)-2],
+		Body:      data[8 : len(data)-1],
 	}, nil
 }
 
